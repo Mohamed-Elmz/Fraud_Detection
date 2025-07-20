@@ -1,111 +1,92 @@
 ---
 title: "BAF Data Summary Statistics"
 output:
-  pdf_document: default
-  word_document: default
+  html_document:
+    df_print: paged
 ---
 
+## Installations & Imports
+
 ```{r}
-#install.packages(pkgs = c("tidyverse","SmartEDA","plyr","knitr","flextable", "gtsummary"))
+# Install Packages
+#install.packages(pkgs = c("tidyverse","SmartEDA","plyr","knitr","flextable","gtsummary","dlookr","moments","dplyr","officer", "cardx"))
 
 # Libraries & Imports
-packages <- c("tidyverse","SmartEDA","plyr","knitr","flextable","gtsummary")
+packages <- c("tidyverse","SmartEDA","plyr","knitr","flextable","gtsummary","dlookr","moments","dplyr","officer", "cardx", "gt")
 invisible(lapply(X = packages, FUN = library, character.only = TRUE, quietly = TRUE))
 ```
+
+## Reading Data
 
 ```{r}
 # Load BAF Data
 baf <- read.csv("Base.csv")
 
+# New table with a subset of columns
 baf_subset <- baf[, c("fraud_bool", "income", "customer_age", "credit_risk_score", "name_email_similarity", "proposed_credit_limit", "session_length_in_minutes", "payment_type", "housing_status", "employment_status", "device_os")]
 ```
 
-```{r}
-# Continuous Variables
-ExpNumStat(baf_subset, by="A", round= 2) %>%
-  flextable()
-
-```
-```{r}
-#install.packages("dlookr")
-# install.packages("moments")
-library(dlookr)
-library(moments)
-library(dplyr)
-library(officer)
-```
+## Summarizing Continuous Variables
 
 ```{r}
-df_diag <- diagnose_numeric(baf_subset)
+# Summarize continuous variables
+baf_diag <- diagnose_numeric(baf_subset)
 
-# Round all columns
-df_diag[] <- lapply(df_diag, function(x) {
-  if(is.numeric(x)) round(x, 2) else x
-})
-```
-
-```{r}
-
-# Get diagnose_numeric output
-df_diag <- diagnose_numeric(baf_subset)
-
-# Function to safely compute stats on columns of baf_subset by name
-extra_stats <- lapply(df_diag$variable, function(varname) {
+# Calculate skewness and kurtosis for each variable
+extra_stats <- lapply(baf_diag$variable, function(varname) {
   vec <- baf_subset[[varname]]
   
-  # Calculate skewness, kurtosis, and IQR, handling NAs
   list(
     skewness = if (is.numeric(vec)) moments::skewness(vec, na.rm = TRUE) else NA,
     kurtosis = if (is.numeric(vec)) moments::kurtosis(vec, na.rm = TRUE) else NA
   )
 })
 
-# Convert list of lists to data frame
+# Add variables to baf_diag summary table
 extra_stats_df <- bind_rows(extra_stats)
+baf_diag_full <- bind_cols(baf_diag, extra_stats_df)
 
-# Combine with existing df_diag
-df_diag_full <- bind_cols(df_diag, extra_stats_df)
-
-# Round all numeric columns
-df_diag_full[] <- lapply(df_diag_full, function(x) {
+# Round to 2 decimal places
+baf_diag_full[] <- lapply(baf_diag_full, function(x) {
   if(is.numeric(x)) round(x, 2) else x
 })
 
-# Remove outlier column
-df_diag_full <- df_diag_full %>%
+# Remove "outlier" variable
+baf_diag_full <- baf_diag_full %>%
   select(-outlier)
 
-# Display as flextable
-df_diag_full %>% 
+# Future formatting
+num_cols <- c("min","Q1","mean","median","Q3", "max", "zero", "minus", "skewness", "kurtosis")
+```
+
+```{r}
+# Display final summary table
+baf_diag_full %>% 
   flextable() %>%
-  set_caption("Descriptive Statistics of Notable Continuous Variables") %>%
+  set_caption("Descriptive Statistics of Continuous Variables") %>%
   font(fontname = "Arial", part = "header") %>%
   add_footer_lines("Note: fraud_bool is the target variable which is heavily skewed. Appoximately 99% of records belong to the negative class (Non-Fraud)") %>%
   align(part = "header", align = "center") %>%
   font(fontname = "Arial", part = "all") %>%
   align(j = num_cols, align = "center", part = "body") %>%
   border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5))
-
 ```
 
-```{r}
-# Categroical Variables
-library(gtsummary)
-library(cardx)
+## Summarizing Categorical Variables
 
+```{r}
+# Summarize categorical variables
 baf_subset %>%
   select(fraud_bool, payment_type, housing_status) %>%
   tbl_summary(by= fraud_bool) %>%
   modify_caption("Descriptive Statistics of Categorical Variables")
-
 ```
 
 ```{r}
+# Summarize categorical variables continued
+
 baf_subset %>%
   select(fraud_bool, employment_status, device_os) %>%
   tbl_summary(by= fraud_bool)%>%
-  modify_caption("Descriptive Statistics of Categorical Variables Continued")
-
+  modify_caption("Descriptive Statistics of Categorical Variables")
 ```
-
-
