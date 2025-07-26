@@ -1,0 +1,4 @@
+Data,True_Positive_Rate,AUC_Score,Balanced_Accuracy,F1_Score
+Train,0.107,0.589,0.508,0.027
+Validate,0.113,0.584,0.507,0.025
+Test,0.105,0.592,0.508,0.028
