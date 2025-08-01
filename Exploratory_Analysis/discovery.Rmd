@@ -1,0 +1,344 @@
+---
+title: "BAF Data Discovery"
+output: html_document
+---
+
+## Installations & Imports
+
+```{r}
+# Install Packages
+#install.packages(pkgs = c("tidyverse","knitr","flextable","gtsummary","dlookr","emmeans","DHARMa", "purrr", "broom", "rcompanion", "ggeffects", "cardx", "officer"))
+
+# Libraries & Imports
+packages <- c("tidyverse","knitr","flextable","gtsummary","dlookr","emmeans", "DHARMa", "purrr", "broom", "gt", "rcompanion", "ggeffects","cardx", "officer")
+invisible(lapply(X = packages, FUN = library, character.only = TRUE, quietly = TRUE))
+```
+
+## Reading Data
+
+```{r}
+# Load BAF Data
+baf <- read.csv("Base.csv")
+```
+
+```{r}
+# Create a subset n= 100,000
+fraud_1 <- baf %>% filter(fraud_bool == 1)
+fraud_0 <- baf %>% filter(fraud_bool == 0)
+
+# Sample from each group
+sample_1 <- fraud_1 %>% sample_n(2000)
+sample_0 <- fraud_0 %>% sample_n(198000)
+
+# Combine records
+baf_subset <- bind_rows(sample_1, sample_0)
+baf_subset <- baf_subset %>% slice_sample(n = nrow(baf_subset))
+```
+
+## Chi-squared Test of Independance
+
+```{r}
+cat_vars <- c("payment_type", "housing_status", "employment_status", "device_os")
+
+# Function that performs the Chi-squared test for each categorical variable
+chi_results <- map_dfr(cat_vars, function(var) {
+  tbl <- table(baf_subset[[var]], baf_subset$fraud_bool)
+  test <- chisq.test(tbl)
+  cramers_v <- cramerV(tbl, bias.correct = FALSE)  
+  
+  formatted_p <- if (test$p.value < 1e-4) {"< 0.0001"} else {
+    formatC(test$p.value, format = "f", digits = 4)}
+  
+  tibble(variable = var,
+    chi_squared = round(test$statistic, 2),
+    p_value = formatted_p,
+    cramers_v = round(cramers_v, 3))
+})
+
+```
+
+```{r}
+# Display Results
+chi_vars <- c("variable", "chi_squared", "p_value", "cramers_v")
+
+flextable(chi_results) %>%
+  set_caption("Chi-squared Test of Independance") %>%
+  add_footer_lines("Each test was performed using the same 100,000 record sample.") %>%
+  align(j = chi_vars, align = "center", part = "body") %>%
+  align(part = "header", align = "center") %>%
+  border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5)) %>%
+  autofit()
+
+  
+```
+
+The results above suggest there **is** a statistically significant association between each categorical variable and fraud. **However**, most variables display a very weak association with fraud when examining Cramers v (< 0.1).
+
+---
+
+## Fraud Rate per Category
+
+```{r}
+# Examining Fraud Rate for payment_type
+table_data <- table(baf$payment_type, baf$fraud_bool)
+round(prop.table(table_data, margin = 1), 3)
+```
+
+```{r}
+# Examining Fraud Rate for housing_status
+table_data <- table(baf$housing_status, baf$fraud_bool)
+round(prop.table(table_data, margin = 1), 3)
+```
+
+```{r}
+# Examining Fraud Rate for employment_status
+table_data <- table(baf$employment_status, baf$fraud_bool)
+round(prop.table(table_data, margin = 1), 3)
+```
+
+```{r}
+# Examining Fraud Rate for device_os
+table_data <- table(baf$device_os, baf$fraud_bool)
+round(prop.table(table_data, margin = 1), 3)
+```
+
+The fraud rates don't show a pattern of high fraud for any particular category among all variables. Most categories have fraud rates of ~1% which is likely due to the overall small proportion of fraudulent records in the data.
+
+---
+
+## Univariate Analysis
+
+```{r}
+# Logistic Regression: Payment Type
+m <- glm(fraud_bool ~ payment_type , family= binomial, data= baf)
+```
+
+```{r}
+# Creating an informative model summary table
+
+coefs <- round(summary(m)$coefficients, 3)
+coef_df <- as.data.frame(coefs)
+coef_df$Variable <- rownames(coef_df)
+rownames(coef_df) <- NULL
+colnames(coef_df)[1:4] <- c("Estimate", "Std_Error", "z_value", "p_value")
+
+# Calculate odds ratio and predicted probability
+coef_df$Odds_Ratio <- round(exp(coef_df$Estimate), 3)
+coef_df$Predicted_Probability <- round(coef_df$Odds_Ratio / (1 + coef_df$Odds_Ratio), 3)
+
+# Adjust variable names to reflect payment_type levels
+coef_df$Variable <- gsub("payment_type", "", coef_df$Variable)
+coef_df$Variable[coef_df$Variable == "(Intercept)"] <- "Intercept (AA)"
+
+# Filter desired columns
+summary_table1 <- coef_df[, c("Variable", "Estimate", "p_value", "Odds_Ratio", "Predicted_Probability")]
+
+# Format p-values
+summary_table1$p_value <- ifelse(summary_table1$p_value < 0.0001, "< 0.0001",
+                                formatC(summary_table1$p_value, digits = 4, format = "f"))
+# Future formatting
+num_cols <- c("Variable","Estimate","p_value","Odds_Ratio","Predicted_Probability")
+```
+
+```{r}
+flextable(summary_table1) %>%
+  set_header_labels(Variable = "payment type", Estimate = "log odds", p_value = "p-value", Odds_Ratio = "odds ratio",
+    Predicted_Probability = "predicted probability") %>%
+  
+    colformat_num(j = c("Estimate", "Odds_Ratio", "Predicted_Probability"), digits = 3) %>%
+    set_caption("Payment Type Univariate Analysis Results") %>%
+    add_footer_lines("Note: Payment type AA is the reference category for the log odds & odds ratios.") %>%
+    font(fontname = "Arial", part = "header") %>%
+  
+    align(j = num_cols, align = "center", part = "body") %>%
+    align(part = "header", align = "center") %>%
+    border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5)) %>%
+    autofit()
+```
+
+The model's results show that: 
+
+- AC is 3.2 times or 420% more likely to be fraud compared to AA
+- AB is 2.14 times or 314% more likely to be fraud compared to AA
+- AD is 2 times or 306% more likely to be fraud compared to AA
+- AE is 34% less likely to be fraud compared to AA
+
+The final ordering of payment categories from **most to least** associated with fraud is **[AC, AB, AD, AE, AA]**. This ordering will allow us to interpret and verify our future classifier's results. 
+
+---
+
+```{r}
+# Logistic Regression: Housing Status
+m2 <- glm(fraud_bool ~ housing_status , family= binomial, data= baf)
+```
+
+```{r}
+# Creating an informative model summary table
+
+coefs <- round(summary(m2)$coefficients, 3)
+coef_df <- as.data.frame(coefs)
+coef_df$Variable <- rownames(coef_df)
+rownames(coef_df) <- NULL
+colnames(coef_df)[1:4] <- c("Estimate", "Std_Error", "z_value", "p_value")
+
+# Add Odds Ratio and Predicted Probability
+coef_df$Odds_Ratio <- round(exp(coef_df$Estimate), 3)
+coef_df$Predicted_Probability <- round(coef_df$Odds_Ratio / (1 + coef_df$Odds_Ratio), 3)
+
+# Adjust variable names to reflect housing_status levels
+coef_df$Variable <- gsub("housing_status", "", coef_df$Variable)
+coef_df$Variable[coef_df$Variable == "(Intercept)"] <- "Intercept (BA)"
+
+# Keep only desired columns
+summary_table2 <- coef_df[, c("Variable", "Estimate", "p_value", "Odds_Ratio", "Predicted_Probability")]
+
+# Format p-values
+summary_table2$p_value <- ifelse(summary_table2$p_value < 0.0001, "< 0.0001",
+                                formatC(summary_table2$p_value, digits = 4, format = "f"))
+```
+
+```{r}
+flextable(summary_table2) %>%
+  set_header_labels(Variable = "housing status", Estimate = "log odds", p_value = "p-value", Odds_Ratio = "odds ratio", Predicted_Probability = "predicted probability") %>%
+  
+  colformat_num(j = c("Estimate", "Odds_Ratio", "Predicted_Probability"), digits = 3) %>%
+  set_caption("Housing Status Univariate Analysis Results") %>%
+  add_footer_lines("Note: Housing status BA is the reference category for the log odds & odds ratios.") %>%
+  font(fontname = "Arial", part = "all") %>%
+  
+  align(j = num_cols, align = "center", part = "body") %>%
+  align(part = "header", align = "center") %>%
+  border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5)) %>%
+  autofit()
+```
+
+The model's results show that:
+
+- BB housing is 84.5% less likely to be fraud compared to BA
+- BC housing is 84.1% less likely to be fraud compared to BA
+- BD housing is 77.6% less likely to be fraud compared to BA
+- BE housing is 91.1% less likely to be fraud compared to BA
+- BF housing is 89.2% less likely to be fraud compared to BA
+- BG housing is 89.8% less likely to be fraud compared to BA
+
+The final ordering of housing categories from **most to least** associated with fraud is **[BA, BD, BC, BB, BF, BG, BE]**. This ordering will allow us to interpret and verify our future classifier's results. 
+
+---
+
+```{r}
+# Logistic Regression: Employment Status
+m3 <- glm(fraud_bool ~ employment_status , family= binomial, data= baf)
+```
+
+```{r}
+# Creating an informative model summary table
+
+coefs <- round(summary(m3)$coefficients, 3)
+coef_df <- as.data.frame(coefs)
+coef_df$Variable <- rownames(coef_df)
+rownames(coef_df) <- NULL
+colnames(coef_df)[1:4] <- c("Estimate", "Std_Error", "z_value", "p_value")
+
+# Add Odds Ratio and Predicted Probability
+coef_df$Odds_Ratio <- round(exp(coef_df$Estimate), 3)
+coef_df$Predicted_Probability <- round(coef_df$Odds_Ratio / (1 + coef_df$Odds_Ratio), 3)
+
+# Adjust variable names to reflect employment_status levels
+coef_df$Variable <- gsub("employment_status", "", coef_df$Variable)
+coef_df$Variable[coef_df$Variable == "(Intercept)"] <- "Intercept (CA)"
+
+# Keep only desired columns
+summary_table3 <- coef_df[, c("Variable", "Estimate", "p_value", "Odds_Ratio", "Predicted_Probability")]
+
+# Format p-values
+summary_table3$p_value <- ifelse(summary_table3$p_value < 0.0001, "< 0.0001",
+                                formatC(summary_table3$p_value, digits = 4, format = "f"))
+```
+
+```{r}
+flextable(summary_table3) %>%
+  set_header_labels(Variable = "employment status", Estimate = "log odds", p_value = "p-value", Odds_Ratio = "odds ratio",Predicted_Probability = "predicted probability") %>%
+  
+  colformat_num(j = c("Estimate", "Odds_Ratio", "Predicted_Probability"), digits = 3) %>%
+  set_caption("Employment Status Univariate Analysis Results") %>%
+  add_footer_lines("Note: Employemnt status CA is the reference category for the log odds & odds ratios.") %>%
+  font(fontname = "Arial", part = "all") %>%
+  
+  align(j = num_cols, align = "center", part = "body") %>%
+  align(part = "header", align = "center") %>%
+  border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5)) %>%
+  autofit()
+```
+
+The model's results show that:
+
+- CC is 2.2 times or 320% more likely to be fraud compared to CA
+- CG is 1.1 times or 212% more likely to be fraud compared to CA
+- CE is 84% less likely to be fraud compared to CA
+- CF is 83 less likely to be fraud compared to CA
+- CB is 44% less likely to be fraud compared to CA
+- CD is 58.8% less likely to be fraud compared to CA
+
+
+The final ordering of employment categories from **most to least** associated with fraud is **[CC, CG, CA, CB, CD, CF, CE]**. This ordering will allow us to interpret and verify our future classifier's results. 
+
+---
+
+```{r}
+# Logistic Regression: Employment Status
+m4 <- glm(fraud_bool ~ device_os , family= binomial, data= baf)
+```
+
+```{r}
+# Creating an informative model summary table
+
+coefs <- round(summary(m4)$coefficients, 3)
+coef_df <- as.data.frame(coefs)
+coef_df$Variable <- rownames(coef_df)
+rownames(coef_df) <- NULL
+colnames(coef_df)[1:4] <- c("Estimate", "Std_Error", "z_value", "p_value")
+
+# Add Odds Ratio and Predicted Probability
+coef_df$Odds_Ratio <- round(exp(coef_df$Estimate), 3)
+coef_df$Predicted_Probability <- round(coef_df$Odds_Ratio / (1 + coef_df$Odds_Ratio), 3)
+
+# Adjust variable names to reflect device os levels
+coef_df$Variable <- gsub("device_os", "", coef_df$Variable)
+coef_df$Variable[coef_df$Variable == "(Intercept)"] <- "Intercept (Linux)"
+
+# Keep only desired columns
+summary_table4 <- coef_df[, c("Variable", "Estimate", "p_value", "Odds_Ratio", "Predicted_Probability")]
+
+# Format p-values
+summary_table4$p_value <- ifelse(summary_table4$p_value < 0.0001, "< 0.0001",
+                                formatC(summary_table4$p_value, digits = 4, format = "f"))
+```
+
+
+```{r}
+flextable(summary_table4) %>%
+  set_header_labels(Variable = "device os", Estimate = "log odds", p_value = "p-value", Odds_Ratio = "odds ratio",Predicted_Probability = "predicted probability") %>%
+  
+  colformat_num(j = c("Estimate", "Odds_Ratio", "Predicted_Probability"), digits = 3) %>%
+  set_caption("Device Operating System Univariate Analysis Results") %>%
+  add_footer_lines("Note: Device OS Linux is the reference category for the log odds & odds ratios.") %>%
+  font(fontname = "Arial", part = "all") %>%
+  
+  align(j = num_cols, align = "center", part = "body") %>%
+  align(part = "header", align = "center") %>%
+  border_inner_h(part = "body", border = fp_border(color = "gray", width = 0.5)) %>%
+  autofit()
+```
+
+The model's results show that:
+
+- Windows os is 4.9 times or 589% more likely to be fraud compared to Linux
+- Mac os is 2.7 times or 374% more likely to be fraud compared to Linux
+- X11 os is 2.2 times or 318% more likely to be fraud compared to Linux
+- Other os's are times or 212% more likely to be fraud compared to Linux
+
+
+The final ordering of device os categories from **most to least** associated with fraud is **[Windows, Macintosh, X11, Other, Linux]**. This ordering will allow us to interpret and verify our future classifier's results. 
+
+---
+
