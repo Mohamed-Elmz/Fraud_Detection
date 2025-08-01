@@ -34,7 +34,7 @@ def create_splits(data):
     return X_train, y_train, X_valid, y_valid, X_test, y_test
 
 def train_model(X):
-    """ This function trains an Isolation_Forest classifier from sklearn to detect anomalies. """
+    """ This function trains an Isolation_Forest classifier using sklearn to detect anomalies. """
     
     # Contamination is the proportion of outliers in the dataset, 1%
     iso_forest = IsolationForest(n_estimators=100, contamination=0.01, random_state=150) 
@@ -43,7 +43,7 @@ def train_model(X):
     return iso_forest
 
 def calculate_TPR(y_true, y_pred):
-    """ This function finds the True Positive Rate at approximately 5% False Positive Rate. """
+    """ This helper function finds the True Positive Rate at approximately 5% False Positive Rate. """
     
     fpr, tpr, thresholds = roc_curve(y_true, y_pred)
     fpr_target = 0.05
@@ -55,7 +55,7 @@ def calculate_TPR(y_true, y_pred):
 
 def eval_model(model, X, y):
     """ This function evaluates the Isolation_Forest classifier using fraud dection metrics(ie. TPR at an FPR threshold of 5%, and 
-        Balanced Accuracy). """
+        Balanced Accuracy, etc). """
     
     # Predictions
     y_pred = model.predict(X) 
