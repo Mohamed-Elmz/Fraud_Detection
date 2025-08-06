@@ -9,6 +9,9 @@
 
 import pandas as pd
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, balanced_accuracy_score, roc_auc_score, roc_curve, auc
@@ -72,8 +75,40 @@ def eval_model(model, X, y):
     ba_score = balanced_accuracy_score(y, y_pred_binary)
     f_score = f1_score(y, y_pred_binary, pos_label=1)
 
-    return target_tpr, auc_score, ba_score, f_score
+    return target_tpr, auc_score, ba_score, f_score, y_pred_binary
+
+
+def create_pca(X_test):
+    # Reduce the data to 2 dimensions for visualization
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_test)
     
+    return X_pca
+
+def visualize(X_pca, labels):
+
+    plt.figure(figsize=(10, 6))
+    plt.scatter(X_pca[labels == 0, 0], X_pca[labels == 0, 1],c='cornflowerblue',
+                label='Non-Fraud (Normal)', alpha=0.5, edgecolor='dimgrey', zorder= 2)
+    plt.scatter(X_pca[labels == 1, 0], X_pca[labels == 1, 1],c='red',
+                label='Fraud (Anomaly)', alpha=0.8, edgecolor='crimson', zorder= 2)
+    
+    plt.title('First Two Principal Components', pad=12, fontsize= 13)
+    plt.xlabel('Second Principal Component', labelpad=10, fontsize=12)
+    plt.ylabel('First Principal Component', labelpad=10, fontsize=12)
+    plt.legend()
+    plt.xlim(-7000, 12000) 
+    plt.ylim(-7000, 7000)
+    plt.grid(True, color="gray", linewidth=0.5, alpha=0.5, zorder= 0)
+    plt.gca().spines["top"].set_linewidth(0.4)
+    plt.gca().spines["right"].set_linewidth(0.4)
+    plt.gca().spines["left"].set_linewidth(0.4)
+    plt.gca().spines["bottom"].set_linewidth(0.4)
+
+    plt.savefig("anomaly_plot.png", dpi=500)  # Save Figure
+    plt.show()
+
+
 # Execution
 
 def main():
@@ -89,14 +124,14 @@ def main():
     print("Training Completed")
     
     # Validate Classifier (training data)
-    train_TPR, train_AUC, train_BA, train_F1 = eval_model(clf, X_train, y_train)
+    train_TPR, train_AUC, train_BA, train_F1, train_labels = eval_model(clf, X_train, y_train)
 
     # Validate Classifier (validation data)
-    valid_TPR, valid_AUC, valid_BA, valid_F1 = eval_model(clf, X_valid, y_valid)
+    valid_TPR, valid_AUC, valid_BA, valid_F1, valid_labels = eval_model(clf, X_valid, y_valid)
     print("Validation Completed")
 
     # Evaluate Classifier (testing data)
-    test_TPR, test_AUC, test_BA, test_F1 = eval_model(clf, X_test, y_test)
+    test_TPR, test_AUC, test_BA, test_F1, test_labels = eval_model(clf, X_test, y_test)
     print("Testing Completed")
 
     # Save results
@@ -107,8 +142,12 @@ def main():
     ,columns=["Data", "True_Positive_Rate", "AUC_Score", "Balanced_Accuracy", "F1_Score"])
 
     results_df = results_df.round(3)
-
     #results_df.to_csv("anomaly_results.csv", index=False) # optional
+
+    # Visulaize feature space using PCA
+    X_pca = create_pca(X_test)
+    visualize(X_pca, test_labels)
     
+
 if __name__ == "__main__":
     main()
