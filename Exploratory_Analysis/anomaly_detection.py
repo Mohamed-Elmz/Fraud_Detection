@@ -93,7 +93,7 @@ def visualize(X_pca, labels):
     plt.scatter(X_pca[labels == 1, 0], X_pca[labels == 1, 1],c='red',
                 label='Fraud (Anomaly)', alpha=0.8, edgecolor='crimson', zorder= 2)
     
-    plt.title('First Two Principal Components', pad=12, fontsize= 13)
+    plt.title('Figure 2: Visualizing Principal Components', pad=12, fontsize= 18)
     plt.xlabel('Second Principal Component', labelpad=10, fontsize=12)
     plt.ylabel('First Principal Component', labelpad=10, fontsize=12)
     plt.legend()
@@ -105,7 +105,7 @@ def visualize(X_pca, labels):
     plt.gca().spines["left"].set_linewidth(0.4)
     plt.gca().spines["bottom"].set_linewidth(0.4)
 
-    plt.savefig("anomaly_plot.png", dpi=500)  # Save Figure
+    #plt.savefig("anomaly_plot.png", dpi=500)  # Save Figure
     plt.show()
 
 
